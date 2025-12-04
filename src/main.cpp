@@ -46,7 +46,7 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-
+  vector <double> IMUdata = grabIMU();
 }
 
 void iic(){
