@@ -1,8 +1,6 @@
 #include <Wire.h>
-#include <vector>
 #include <Adafruit_BMP280.h>
 #include "FastIMU.h"
-using std::vector;
 
 //statusis
 bool IMU_INIT = false;
@@ -32,10 +30,13 @@ byte baro_addresses[2] = {0x76, 0x77};
 void iic();
 void cereal(int);
 void imuSetup();
-vector <float> grabIMU();
+void grabIMU();
 void baroSetup();
-vector <float> grabBaro();
+void grabBaro();
 
+//raw data arrays
+float IMUdata[6];
+float BAROdata[2];
 
 void setup() {
   // AY SKVERED SI
@@ -53,8 +54,8 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  vector <float> IMUdata = grabIMU();
-  vector <float> BAROdata = grabBaro();
+  grabIMU();
+  grabBaro();
 }
 
 void iic(){
@@ -81,27 +82,20 @@ void imuSetup(){
   }
 }
 
-vector <float> grabIMU(){
-  vector <float> data;
-  if (IMU_INIT){
+void grabIMU() {
+  if (IMU_INIT) {
     IMU.update();
     IMU.getAccel(&accelData);
     IMU.getGyro(&gyroData);
-    data = {
-      accelData.accelX,
-      accelData.accelY,
-      accelData.accelZ,
-      gyroData.gyroX,
-      gyroData.gyroY,
-      gyroData.gyroZ,
-    };
+    IMUdata[0] = accelData.accelX;
+    IMUdata[1] = accelData.accelY;
+    IMUdata[2] = accelData.accelZ;
+    IMUdata[3] = gyroData.gyroX;
+    IMUdata[4] = gyroData.gyroY;
+    IMUdata[5] = gyroData.gyroZ;
+  } else {
+    for (int i = 0; i < 6; i++) IMUdata[i] = -9999.0;
   }
-  else{
-    for (int i = 0; i < 6; i++){
-      data.push_back(-9999.0);
-    }
-  }
-  return data;
 }
 
 void baroSetup(){
@@ -126,13 +120,11 @@ void baroSetup(){
   }
 }
 
-vector <float> grabBaro(){
-  vector <float> data;
-  if (BARO1_INIT) data.push_back(bmp1.readPressure());
-  else {data.push_back(-9999.0);}
+void grabBaro(){
+  if (BARO1_INIT) BAROdata[0] = bmp1.readPressure();
+  else {BAROdata[0] = -9999.0;}
 
-  if (BARO2_INIT) data.push_back(bmp2.readPressure());
-  else {data.push_back(-9999.0);}
+  if (BARO2_INIT) BAROdata[1] = bmp2.readPressure();
+  else {BAROdata[1] = -9999.0;}
 
-  return data;
 }
