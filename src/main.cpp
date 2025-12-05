@@ -11,6 +11,10 @@ bool BARO2_INIT = false;
 bool GNSS_INIT = false;
 bool TELEM_INIT = false;
 
+//AY2SI
+#define SDA 21
+#define SCL 22
+
 ///imu config
 #define IMU_ADDRESS 0x68
 MPU6500 IMU;
@@ -54,8 +58,9 @@ void loop() {
 }
 
 void iic(){
-  Wire.begin();
+  Wire.begin(SDA, SCL);
   Wire.setClock(400000);
+
 }
 
 void cereal(int baudRate){
@@ -64,7 +69,10 @@ void cereal(int baudRate){
 
 void imuSetup(){
   int imuErr = IMU.init(calib, IMU_ADDRESS);
-  if (imuErr != 0){Serial.println("Failed to init IMU. "+String(imuErr));}
+  if (imuErr != 0){
+    Serial.print("Failed to init IMU. ");
+    Serial.println(imuErr);
+  }
   else {
     IMU_INIT = true;
     Serial.println("Begining Calibration) Standby");
@@ -107,6 +115,7 @@ void baroSetup(){
                   Adafruit_BMP280::STANDBY_MS_500);
   }
   BARO2_INIT = bmp2.begin(baro_addresses[1]);
+  delay(5);
   if (!BARO2_INIT) Serial.println("Baro on "+String(baro_addresses[1])+" failed");
   else{
     bmp2.setSampling(Adafruit_BMP280::MODE_NORMAL,
@@ -120,10 +129,10 @@ void baroSetup(){
 vector <float> grabBaro(){
   vector <float> data;
   if (BARO1_INIT) data.push_back(bmp1.readPressure());
+  else {data.push_back(-9999.0);}
+
   if (BARO2_INIT) data.push_back(bmp2.readPressure());
-  if (!BARO1_INIT && !BARO2_INIT){
-    data.push_back(-9999.0);
-    data.push_back(-9999.0);
-  }
+  else {data.push_back(-9999.0);}
+
   return data;
 }
