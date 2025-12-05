@@ -28,9 +28,9 @@ byte baro_addresses[2] = {0x76, 0x77};
 void iic();
 void cereal(int);
 void imuSetup();
-vector <double> grabIMU();
+vector <float> grabIMU();
 void baroSetup();
-vector <double> grabBaro();
+vector <float> grabBaro();
 
 
 void setup() {
@@ -42,12 +42,15 @@ void setup() {
 
   //ImU
   imuSetup();
+
+  //Baro
+  baroSetup();
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  vector <double> IMUdata = grabIMU();
-  vector <double> BAROdata = grabBaro();
+  vector <float> IMUdata = grabIMU();
+  vector <float> BAROdata = grabBaro();
 }
 
 void iic(){
@@ -70,18 +73,26 @@ void imuSetup(){
   }
 }
 
-vector <double> grabIMU(){
-  IMU.update();
-  IMU.getAccel(&accelData);
-  IMU.getGyro(&gyroData);
-  vector <double> data = {
-    accelData.accelX,
-    accelData.accelY,
-    accelData.accelZ,
-    gyroData.gyroX,
-    gyroData.gyroY,
-    gyroData.gyroZ,
-  };
+vector <float> grabIMU(){
+  vector <float> data;
+  if (IMU_INIT){
+    IMU.update();
+    IMU.getAccel(&accelData);
+    IMU.getGyro(&gyroData);
+    data = {
+      accelData.accelX,
+      accelData.accelY,
+      accelData.accelZ,
+      gyroData.gyroX,
+      gyroData.gyroY,
+      gyroData.gyroZ,
+    };
+  }
+  else{
+    for (int i = 0; i < 6; i++){
+      data.push_back(-9999.0);
+    }
+  }
   return data;
 }
 
@@ -106,13 +117,13 @@ void baroSetup(){
   }
 }
 
-vector <double> grabBaro(){
-  vector <double> data;
+vector <float> grabBaro(){
+  vector <float> data;
   if (BARO1_INIT) data.push_back(bmp1.readPressure());
-  if (BARO1_INIT) data.push_back(bmp1.readPressure());
+  if (BARO2_INIT) data.push_back(bmp2.readPressure());
   if (!BARO1_INIT && !BARO2_INIT){
-    data.push_back(-1.0);
-    data.push_back(-1.0);
+    data.push_back(-9999.0);
+    data.push_back(-9999.0);
   }
   return data;
 }
