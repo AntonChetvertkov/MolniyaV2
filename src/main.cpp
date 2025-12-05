@@ -30,7 +30,7 @@ void cereal(int);
 void imuSetup();
 vector <double> grabIMU();
 void baroSetup();
-//vector <double> grabBaro(int);
+vector <double> grabBaro();
 
 
 void setup() {
@@ -47,6 +47,7 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   vector <double> IMUdata = grabIMU();
+  vector <double> BAROdata = grabBaro();
 }
 
 void iic(){
@@ -105,4 +106,13 @@ void baroSetup(){
   }
 }
 
-//vector <double> grabBaro(int){}
+vector <double> grabBaro(){
+  vector <double> data;
+  if (BARO1_INIT) data.push_back(bmp1.readPressure());
+  if (BARO1_INIT) data.push_back(bmp1.readPressure());
+  if (!BARO1_INIT && !BARO2_INIT){
+    data.push_back(-1.0);
+    data.push_back(-1.0);
+  }
+  return data;
+}
