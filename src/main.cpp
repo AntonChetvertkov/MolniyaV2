@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <Adafruit_BMP280.h>
 #include "FastIMU.h"
+#include <GyverFilters.h>
 
 //statusis
 bool IMU_INIT = false;
@@ -33,29 +34,98 @@ void imuSetup();
 void grabIMU();
 void baroSetup();
 void grabBaro();
+float PressToAlt(float pressure);
+void attitude_begin();
+void attitude_update(float ax, float ay, float az, float gx, float gy, float gz, float dt);
+void print_filtered_data();
 
 //raw data arrays
 float IMUdata[6];
-float BAROdata[2];
+float BAROdata[3];
+
+//filters
+GKalman filterAlt(40, 0.5);
+GKalman filterVel(20, 0.8);
+
+GFilterRA filterAccelX(3);
+GFilterRA filterAccelY(3);
+GFilterRA filterAccelZ(3);
+
+GFilterRA filterGyroX(3);
+GFilterRA filterGyroY(3);
+GFilterRA filterGyroZ(3);
+
+struct AttitudeFilter {
+    float roll;
+    float pitch;
+    float yaw;
+    bool initted;
+};
+
+AttitudeFilter attitude;
+
+unsigned long last_time;
+float dt;
+float ground_pressure;
+float altitude;
+float velocity;
+float last_altitude;
 
 void setup() {
   // AY SKVERED SI
   iic();
 
   //Cereal
-  cereal(9600);
+  cereal(115200);
 
   //ImU
   imuSetup();
 
   //Baro
   baroSetup();
+
+  attitude_begin();
+
+  if (BARO1_INIT) ground_pressure = bmp1.readPressure();
+  else if (BARO2_INIT) ground_pressure = bmp2.readPressure();
+  else ground_pressure = 101325.0;
+
+  altitude = 0.0;
+  velocity = 0.0;
+  last_altitude = 0.0;
+  last_time = micros();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  unsigned long current_time = micros();
+  dt = (current_time - last_time)/1000000.0;
+  last_time = current_time;
+
   grabIMU();
   grabBaro();
+
+  if (BARO1_INIT || BARO2_INIT) {
+    float measured_alt = PressToAlt(BAROdata[2]);
+    altitude = filterAlt.filtered(measured_alt);
+
+    float unfiltered_beer_no_velocity = (altitude - last_altitude)/dt;
+    velocity = filterVel.filtered(unfiltered_beer_no_velocity); 
+    last_altitude = altitude;
+  }
+  if (IMU_INIT) {
+        float ax = filterAccelX.filtered(IMUdata[0]);
+        float ay = filterAccelY.filtered(IMUdata[1]);
+        float az = filterAccelZ.filtered(IMUdata[2]);
+        
+        float gx = filterGyroX.filtered(IMUdata[3]);
+        float gy = filterGyroY.filtered(IMUdata[4]);
+        float gz = filterGyroZ.filtered(IMUdata[5]);
+        
+        attitude_update(ax, ay, az, gx, gy, gz, dt);
+    }
+    print_filtered_data();
+    
+    delay(10);
 }
 
 void iic(){
@@ -121,10 +191,64 @@ void baroSetup(){
 }
 
 void grabBaro(){
-  if (BARO1_INIT) BAROdata[0] = bmp1.readPressure();
-  else {BAROdata[0] = -9999.0;}
+  if (BARO1_INIT) {
+    BAROdata[0] = bmp1.readPressure();
+  }
+  else {BAROdata[0] = 0.0;}
 
-  if (BARO2_INIT) BAROdata[1] = bmp2.readPressure();
-  else {BAROdata[1] = -9999.0;}
+  if (BARO2_INIT) {
+    BAROdata[1] = bmp2.readPressure();
+  }
+  else {BAROdata[1] = 0.0;}
+  
+  if (BARO1_INIT && BARO2_INIT) {BAROdata[2] = (BAROdata[0] + BAROdata[1])/2.0;}
+  else if ((!BARO1_INIT && BARO2_INIT) || (BARO1_INIT && !BARO2_INIT)){BAROdata[2] = (BAROdata[0] + BAROdata[1])/1.0;}
+  else {BAROdata[2] = 0.0;}
+}
 
+float PressToAlt(float pressure) {
+    return 44330.0 * (1.0 - pow(pressure / ground_pressure, 0.1903));
+}
+
+void attitude_begin() {
+    attitude.roll = 0.0;
+    attitude.pitch = 0.0;
+    attitude.yaw = 0.0;
+    attitude.initted = false;
+}
+
+void attitude_update(float ax, float ay, float az, float gx, float gy, float gz, float dt) {
+    const float alpha = 0.98;
+    
+    if (!attitude.initted) {
+        attitude.roll = atan2(ay, az) * 57.2958;
+        attitude.pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 57.2958;
+        attitude.yaw = 0.0;
+        attitude.initted = true;
+        return;
+    }
+    
+    attitude.roll += gx * dt;
+    attitude.pitch += gy * dt;
+    attitude.yaw += gz * dt;
+    
+    float accel_roll = atan2(ay, az) * 57.2958;
+    float accel_pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 57.2958;
+    
+    attitude.roll = alpha * attitude.roll + (1.0 - alpha) * accel_roll;
+    attitude.pitch = alpha * attitude.pitch + (1.0 - alpha) * accel_pitch;
+}
+
+void print_filtered_data() {
+    Serial.print("Alt: ");
+    Serial.print(altitude, 2);
+    Serial.print(" m, Vel: ");
+    Serial.print(velocity, 2);
+    Serial.print(" m/s, Roll: ");
+    Serial.print(attitude.roll, 1);
+    Serial.print("°, Pitch: ");
+    Serial.print(attitude.pitch, 1);
+    Serial.print("°, Yaw: ");
+    Serial.print(attitude.yaw, 1);
+    Serial.println("°");
 }
