@@ -2,6 +2,7 @@
 #include <Adafruit_BMP280.h>
 #include "FastIMU.h"
 #include <GyverFilters.h>
+#include <vector>
 
 //statusis
 bool IMU_INIT = false;
@@ -38,6 +39,7 @@ float PressToAlt(float pressure);
 void attitude_begin();
 void attitude_update(float ax, float ay, float az, float gx, float gy, float gz, float dt);
 void print_filtered_data();
+void encode_data();
 
 //raw data arrays
 float IMUdata[6];
@@ -67,8 +69,30 @@ AttitudeFilter attitude;
 unsigned long last_time;
 float dt;
 float ground_pressure;
-float altitude;
-float velocity;
+float altitude = 0;
+float velocity = 0;
+float vertical_velocity = 0;
+float vertical_velocity_raw = 0;
+float pitch_angle = 127;
+float roll_angle = 127;
+float altitude_raw = 127;
+double gnss_latitude = 0;
+double gnss_longitude = 0;
+float gnss_hdop = 0;
+byte gnss_sat_number;
+float battery_voltage = 0;
+byte vehicle_state = 0;
+byte autopilot_state = 0;
+byte command = 0;
+uint32_t checksum = 0;
+byte start_byte = 45;
+byte COBS = 1;
+
+
+
+byte packet[26];
+
+
 float last_altitude;
 
 void setup() {
@@ -251,4 +275,75 @@ void print_filtered_data() {
     Serial.print("°, Yaw: ");
     Serial.print(attitude.yaw, 1);
     Serial.println("°");
+}
+
+void encode_data(byte target = 255){
+  packet[0] = start_byte;
+  packet[2] = target;
+  packet[3] = (byte)((int8_t)vertical_velocity_raw + 127);
+  packet[4] = (byte)((int8_t)vertical_velocity+127);
+  packet[5] = velocity;
+  packet[6] = (byte)((int8_t)pitch_angle+127);
+  packet[7] = (byte)((int8_t)roll_angle+127);
+  packet[8] = altitude_raw;
+  packet[9] = altitude;
+
+  //gnss manipulating
+
+  int32_t latitude_mdeg = gnss_latitude * 1000000;
+  byte latitude_mdeg_0 = latitude_mdeg & 0xFF;
+  byte latitude_mdeg_1 = (latitude_mdeg >> 8) & 0xFF;
+  byte latitude_mdeg_2 = (latitude_mdeg >> 16) & 0xFF;
+  byte latitude_mdeg_3 = (latitude_mdeg >> 24) & 0xFF;
+  int32_t longitude_mdeg = gnss_longitude*1000000;
+  byte longitude_mdeg_0 = longitude_mdeg & 0xFF;
+  byte longitude_mdeg_1 = (longitude_mdeg >> 8) & 0xFF;
+  byte longitude_mdeg_2 = (longitude_mdeg >> 16) & 0xFF;
+  byte longitude_mdeg_3 = (longitude_mdeg >> 24) & 0xFF;
+
+  packet[10] = latitude_mdeg_0;
+  packet[11] = latitude_mdeg_1;
+  packet[12] = latitude_mdeg_2;
+  packet[13] = latitude_mdeg_3;
+  packet[14] = longitude_mdeg_0;
+  packet[15] = longitude_mdeg_1;
+  packet[16] = longitude_mdeg_2;
+  packet[17] = longitude_mdeg_3;
+  packet[18] = gnss_hdop;
+  packet[19] = gnss_sat_number;
+  packet[20] = (byte)(battery_voltage*10);
+  packet[21] = vehicle_state;
+  packet[22] = autopilot_state;
+  packet[23] = command;
+  
+  //fletcher16 checksum
+
+  uint16_t sum1 = 0;
+  uint16_t sum2 = 0;
+  for (int i = 2; i < 24; i++){
+    sum1 = (sum1 + packet[i]) % 255;
+    sum2 = (sum2 + sum1) % 255;
+  }
+  uint16_t checksum = (sum2 << 8) | sum1;
+  packet[24] = checksum & 0xFF;
+  packet[25] = (checksum >> 8) & 0xFF;
+
+  //COBS
+
+  std::vector<uint8_t> start_byte_occurances;
+  for (int i = 2; i < 26; i++){
+    if (packet[i] == start_byte) start_byte_occurances.push_back((uint8_t)i);
+  }
+  
+  if (start_byte_occurances.size() == 0) {
+    packet[1] = 255;
+  } else {
+    packet[1] = start_byte_occurances[0];
+    
+    for (int j = 0; j < start_byte_occurances.size() - 1; j++){
+      packet[start_byte_occurances[j]] = start_byte_occurances[j + 1];
+    }
+    
+    packet[start_byte_occurances[start_byte_occurances.size() - 1]] = 255;
+  }
 }
