@@ -50,7 +50,7 @@ void attitude_update(float ax, float ay, float az, float gx, float gy, float gz,
 void print_filtered_data();
 void encode_data();
 void decode_data();
-void updateLora();
+void update_lora();
 
 //raw data arrays
 float IMUdata[6];
@@ -120,6 +120,9 @@ void setup() {
   //Baro
   baroSetup();
 
+  //lorka setup
+  loraSetup();
+
   attitude_begin();
 
   if (BARO1_INIT) ground_pressure = bmp1.readPressure();
@@ -160,7 +163,8 @@ void loop() {
         attitude_update(ax, ay, az, gx, gy, gz, dt);
     }
     print_filtered_data();
-    
+    encode_data(255);
+    update_lora();
     delay(10);
 }
 
@@ -403,3 +407,14 @@ void loraSetup() {
   LoraSerial.begin(9600, SERIAL_8N1, LORA_RX, LORA_TX);
 }
 
+void update_lora(){ 
+  if (LoraSerial.available() >= 26) {
+    LoraSerial.readBytes(packet_recv, 26);
+    decode_data();
+  }
+  if (command_recv == 17){
+    while(digitalRead(LORA_AUX) == LOW) delay(0.5);
+    LoraSerial.write(packet, 26);
+    command_recv = 0;
+  }
+}
