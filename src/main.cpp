@@ -3,6 +3,7 @@
 #include "FastIMU.h"
 #include <GyverFilters.h>
 #include <vector>
+#include <HardwareSerial.h>
 
 //statusis
 bool IMU_INIT = false;
@@ -27,11 +28,19 @@ Adafruit_BMP280 bmp1;
 Adafruit_BMP280 bmp2;
 byte baro_addresses[2] = {0x76, 0x77};
 
+//lora config
+#define LORA_TX 17
+#define LORA_RX 16
+#define LORA_M0 4
+#define LORA_M1 5
+#define LORA_AUX 18
+HardwareSerial LoraSerial(2);
 
 //func prototype
 void iic();
 void cereal(int);
 void imuSetup();
+void loraSetup();
 void grabIMU();
 void baroSetup();
 void grabBaro();
@@ -40,6 +49,8 @@ void attitude_begin();
 void attitude_update(float ax, float ay, float az, float gx, float gy, float gz, float dt);
 void print_filtered_data();
 void encode_data();
+void decode_data();
+void updateLora();
 
 //raw data arrays
 float IMUdata[6];
@@ -88,9 +99,10 @@ uint32_t checksum = 0;
 byte start_byte = 45;
 byte COBS = 1;
 
-
+byte command_recv = 0;
 
 byte packet[26];
+byte packet_recv[26];
 
 
 float last_altitude;
@@ -347,3 +359,47 @@ void encode_data(byte target = 255){
     packet[start_byte_occurances[start_byte_occurances.size() - 1]] = 255;
   }
 }
+
+void decode_data() {
+  if (packet_recv[0] != start_byte) return;
+  
+  std::vector<uint8_t> cobs_chain;
+  uint8_t next_pos = packet_recv[1];
+  
+  while (next_pos != 255 && next_pos < 26) {
+    cobs_chain.push_back(next_pos);
+    next_pos = packet_recv[next_pos];
+  }
+  
+  for (uint8_t pos : cobs_chain) {
+    packet_recv[pos] = start_byte;
+  }
+  
+  uint16_t sum1 = 0;
+  uint16_t sum2 = 0;
+  for (int i = 2; i < 24; i++) {
+    sum1 = (sum1 + packet_recv[i]) % 255;
+    sum2 = (sum2 + sum1) % 255;
+  }
+  uint16_t calculated_checksum = (sum2 << 8) | sum1;
+  uint16_t received_checksum = packet_recv[25] << 8 | packet_recv[24];
+  
+  if (calculated_checksum != received_checksum) {
+    command_recv = 17;
+    return;
+  }
+  
+  command_recv = packet_recv[23];
+}
+
+void loraSetup() {
+  pinMode(LORA_M0, OUTPUT);
+  pinMode(LORA_M1, OUTPUT);
+  pinMode(LORA_AUX, INPUT);
+  
+  digitalWrite(LORA_M0, LOW);
+  digitalWrite(LORA_M1, LOW);
+  
+  LoraSerial.begin(9600, SERIAL_8N1, LORA_RX, LORA_TX);
+}
+
